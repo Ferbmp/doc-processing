@@ -134,14 +134,23 @@ These are the deliberate boundaries of the design — not oversights:
 ## Architecture
 
 ```mermaid
-flowchart LR
-    UI["React UI (Vite + Tailwind + shadcn/ui)"] -->|"POST /api/documents/"| API["Django + DRF"]
-    API -->|"document + job in one transaction"| DB[("Postgres")]
-    Worker["Worker (management command)"] -->|"claim FOR UPDATE SKIP LOCKED"| DB
-    Worker -->|"simulated call, outside any transaction"| AI["AI extraction simulator"]
-    Worker -->|"result + status + audit, one transaction"| DB
-    UI -->|"poll"| API
-    API --> DB
+flowchart TB
+    UI["React UI"]
+
+    subgraph backend [" "]
+        direction LR
+        API["Django + DRF"]
+        Worker["Worker"]
+    end
+
+    DB[("Postgres")]
+    AI["AI simulator"]
+
+    UI -->|"submit / poll"| API
+    API -->|"document + job\n(one transaction)"| DB
+    Worker -->|"claim\nFOR UPDATE SKIP LOCKED"| DB
+    Worker -->|"extract\n(outside any TX)"| AI
+    Worker -->|"result + status + audit\n(one transaction)"| DB
 ```
 
 Four containers: `db` (Postgres 16), `api` (Django, applies migrations),
@@ -153,20 +162,21 @@ server proxying `/api` to the API).
 ```mermaid
 stateDiagram-v2
     [*] --> RECEIVED: submitted
-    RECEIVED --> PROCESSING: worker claims job
-    PROCESSING --> COMPLETED: complete, consistent, confident
-    PROCESSING --> REVIEW_REQUIRED: incomplete / low confidence / suspected duplicate
-    PROCESSING --> RETRY_SCHEDULED: retryable error, attempts left
-    RETRY_SCHEDULED --> PROCESSING: backoff elapsed
-    PROCESSING --> FAILED: non-retryable error or attempts exhausted
-    REVIEW_REQUIRED --> COMPLETED: reviewer approves
-    REVIEW_REQUIRED --> REJECTED: reviewer rejects
-    FAILED --> RETRY_SCHEDULED: operator retries
+    RECEIVED --> PROCESSING: claim
+    PROCESSING --> COMPLETED: accepted
+    PROCESSING --> REVIEW_REQUIRED: needs human
+    PROCESSING --> RETRY_SCHEDULED: transient fail
+    RETRY_SCHEDULED --> PROCESSING: backoff done
+    PROCESSING --> FAILED: give up
+    REVIEW_REQUIRED --> COMPLETED: approve
+    REVIEW_REQUIRED --> REJECTED: reject
+    FAILED --> RETRY_SCHEDULED: manual retry
 ```
 
-`COMPLETED` and `REJECTED` are terminal. The map lives in
-[backend/documents/states.py](backend/documents/states.py) and every status
-change goes through `transition()` in
+`COMPLETED` and `REJECTED` are terminal. `REVIEW_REQUIRED` covers incomplete
+fields, low confidence, arithmetic mismatch, and suspected duplicate invoices.
+The map lives in [backend/documents/states.py](backend/documents/states.py) and
+every status change goes through `transition()` in
 [backend/documents/services/state.py](backend/documents/services/state.py),
 which validates the move and writes the audit row in the same transaction.
 Nothing else assigns `Document.status`, so an illegal transition is a raised
