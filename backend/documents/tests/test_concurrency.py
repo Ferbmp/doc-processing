@@ -7,7 +7,11 @@ from django.db import connection
 
 from documents.models import Document, ExtractionResult, ProcessingJob
 from documents.services import processing
-from documents.services.processing import OUTCOME_REVIEW_REQUIRED, execute_job
+from documents.services.processing import (
+    OUTCOME_COMPLETED,
+    OUTCOME_REVIEW_REQUIRED,
+    execute_job,
+)
 from documents.services.queue import claim_next_job
 from documents.services.submission import submit_document
 from documents.states import DocumentStatus
@@ -90,3 +94,47 @@ def test_database_has_the_final_say_on_duplicate_invoices(monkeypatch, make_docu
     assert (
         ExtractionResult.objects.filter(invoice_number="RACE-1", needs_review=False).count() == 1
     )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_acceptances_of_same_invoice_leave_one_accepted(monkeypatch, make_document):
+    """Two workers finish the same vendor+invoice at once; the unique index keeps one.
+
+    The app-level duplicate check is blinded so both threads pass the TOCTOU
+    window the way a real race would: both look, both see nothing accepted yet,
+    then both try to write ``needs_review=False``. Exactly one insert survives.
+    """
+
+    monkeypatch.setattr(processing, "_duplicate_invoice_reasons", lambda *a, **k: [])
+
+    first = make_document("success", invoice_number="CONCUR-1", note="scan-a")
+    second = make_document("success", invoice_number="CONCUR-1", note="scan-b")
+
+    job_a = claim_next_job("worker-a")
+    job_b = claim_next_job("worker-b")
+    assert job_a is not None and job_b is not None
+    assert {job_a.document_id, job_b.document_id} == {first.id, second.id}
+
+    jobs = [job_a, job_b]
+    outcomes = run_in_threads(
+        lambda i: execute_job(jobs[i], worker_id=f"worker-{i}", sleep=False),
+        2,
+    )
+
+    assert set(outcomes) == {OUTCOME_COMPLETED, OUTCOME_REVIEW_REQUIRED}
+    assert (
+        ExtractionResult.objects.filter(
+            invoice_number="CONCUR-1", needs_review=False
+        ).count()
+        == 1
+    )
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert {first.status, second.status} == {
+        DocumentStatus.COMPLETED,
+        DocumentStatus.REVIEW_REQUIRED,
+    }
+
+    loser = first if first.status == DocumentStatus.REVIEW_REQUIRED else second
+    assert any("duplicate" in reason for reason in loser.result.review_reasons)

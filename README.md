@@ -49,12 +49,37 @@ open -a Docker    # start the daemon
 
 ```bash
 docker compose run --rm api pytest        # or: make test
+# single file / case:
+docker compose run --rm api pytest documents/tests/test_concurrency.py -v
 ```
 
 The suite runs against a real Postgres, because the guarantees being tested
 (`SELECT ... FOR UPDATE SKIP LOCKED`, partial unique indexes, check
 constraints, savepoints) are Postgres behaviours and would be untestable on
-SQLite.
+SQLite. Concurrency cases use `pytest.mark.django_db(transaction=True)` plus
+threads with separate DB connections.
+
+| File | What it covers |
+| --- | --- |
+| `test_state_machine.py` | Allowed / forbidden transitions; audit events are append-only |
+| `test_submission.py` | Idempotent submit on content hash; order-insensitive JSON |
+| `test_processing.py` | Success, review paths, retries/backoff, exhaustion, stale-job reap, mid-write rollback |
+| `test_review.py` | Approve with corrections, reject, refuse incomplete / duplicate invoice |
+| `test_api.py` | HTTP surface: 201 then 200 on duplicate, review/retry endpoints |
+| `test_concurrency.py` | The races that matter for money |
+
+Concurrency specifically:
+
+| Case | Assertion |
+| --- | --- |
+| Same document submitted concurrently | 4 threads → 1 `Document`, 1 job |
+| Same job claimed concurrently | 4 workers → exactly 1 winner (`SKIP LOCKED`) |
+| Concurrent workers, different jobs | Each takes a different row |
+| Same invoice accepted concurrently | Two workers finish the same vendor+invoice at once (app-level check blinded to force the TOCTOU window) → one `completed`, one `review_required`, exactly one accepted row — the unique index is the final say |
+| Duplicate invoice (sequential) | Second scan lands in review; reviewer cannot approve it |
+
+Forced outcomes (`success`, `flaky`, `incomplete`, …) make every branch
+deterministic; the UI dropdown uses the same hook.
 
 ### Trying the interesting paths
 
@@ -80,6 +105,29 @@ Two more things worth poking at:
   duplicate rather than being posted twice.
 
 To watch concurrency behave, run several workers: `make scale-workers`.
+
+---
+
+## Assumptions
+
+These are the deliberate boundaries of the design — not oversights:
+
+- **A document is canonical JSON or text**, not a PDF/image blob. The payload
+  is what gets hashed for idempotency and what the simulator “reads”. File
+  upload and OCR are out of scope.
+- **Extraction is synchronous from the worker’s point of view.** The worker
+  calls the (simulated) service, waits for the response, then writes. There is
+  no async callback or webhook from the model.
+- **Processing is at-least-once.** A job can be claimed again after a crash or
+  reap. Safety comes from the locked re-read and the unique accepted-invoice
+  index, not from “exactly once delivery”.
+- **A financial record is accepted only after validation.** Completeness,
+  confidence, arithmetic, and “already accepted for this vendor+invoice” all
+  run before `COMPLETED`. Failures land in `review_required` or `failed`
+  instead of writing a bad ledger row.
+- **Authentication and multi-tenancy are intentionally out of scope.** The API
+  is open; there is no per-org isolation. Fine for a reviewable demo, not for
+  production as-is.
 
 ---
 
@@ -324,7 +372,9 @@ Roughly in the order I would pick it up:
 8. **Tests I skipped:** property-based tests over the state machine (no
    sequence of legal transitions should reach an inconsistent record), a
    fuzzer over malformed payloads, and a load test with a genuinely killed
-   worker mid-attempt rather than a simulated stale lock.
+   worker mid-attempt rather than a simulated stale lock. Concurrent
+   submission, claim, and same-invoice acceptance are covered in
+   `test_concurrency.py`.
 
 ### Known limitations
 
