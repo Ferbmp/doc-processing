@@ -8,7 +8,8 @@ in the same transaction.
 from __future__ import annotations
 
 import logging
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from ..models import AuditEvent, Document, ProcessingJob
 from ..states import ALLOWED_TRANSITIONS, InvalidTransition

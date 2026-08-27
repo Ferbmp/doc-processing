@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
 
-from .states import DocumentStatus, EventType, JobStatus, LIVE_JOB_STATUSES
+from .states import LIVE_JOB_STATUSES, DocumentStatus, EventType, JobStatus
 
 MONEY = {"max_digits": 14, "decimal_places": 2}
 

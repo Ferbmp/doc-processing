@@ -8,7 +8,6 @@ this invoice may be accepted at all.
 
 from __future__ import annotations
 
-import logging
 from decimal import Decimal
 from typing import Any
 
@@ -19,8 +18,6 @@ from ..models import Document, ExtractionResult
 from ..states import DocumentStatus, EventType
 from .state import transition
 from .validation import blocking_reasons_for_acceptance
-
-logger = logging.getLogger(__name__)
 
 APPROVE = "approve"
 REJECT = "reject"

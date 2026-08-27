@@ -217,7 +217,9 @@ def _baseline_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     total = _to_decimal(_first(invoice, "total", "amount_due", "grand_total", "total_amount"))
 
     return {
-        "vendor_name": _first(invoice, "vendor_name", "vendor", "supplier", "supplier_name", "from"),
+        "vendor_name": _first(
+            invoice, "vendor_name", "vendor", "supplier", "supplier_name", "from"
+        ),
         "invoice_number": _first(
             invoice, "invoice_number", "invoice_no", "invoice_id", "number", "reference"
         ),

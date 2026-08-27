@@ -3,8 +3,8 @@ from django.urls import path
 from .views import (
     DocumentDetailView,
     DocumentListCreateView,
-    DocumentReviewView,
     DocumentRetryView,
+    DocumentReviewView,
     HealthView,
     StatsView,
 )

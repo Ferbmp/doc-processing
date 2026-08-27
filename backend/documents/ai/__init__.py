@@ -1,6 +1,6 @@
 from .simulator import (  # noqa: F401
-    ExtractionResponse,
     ExtractionError,
+    ExtractionResponse,
     PermanentExtractionError,
     SimulatedOutcome,
     TransientExtractionError,

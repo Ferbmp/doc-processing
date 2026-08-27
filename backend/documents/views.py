@@ -14,7 +14,12 @@ from .serializers import (
 )
 from .services.queue import due_job_count
 from .services.review import ReviewError, apply_review
-from .services.submission import RetryNotAllowed, SubmissionError, request_manual_retry, submit_document
+from .services.submission import (
+    RetryNotAllowed,
+    SubmissionError,
+    request_manual_retry,
+    submit_document,
+)
 from .states import DocumentStatus
 
 
@@ -114,7 +119,8 @@ class DocumentReviewView(APIView):
 
 class StatsView(APIView):
     def get(self, request):
-        counts = {row["status"]: row["n"] for row in Document.objects.values("status").annotate(n=Count("id"))}
+        rows = Document.objects.values("status").annotate(n=Count("id"))
+        counts = {row["status"]: row["n"] for row in rows}
         return Response(
             {
                 "total": sum(counts.values()),

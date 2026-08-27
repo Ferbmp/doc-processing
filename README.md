@@ -31,7 +31,8 @@ Then open:
 | Django admin | http://localhost:8000/admin/ (create a superuser first) |
 
 There is a `Makefile` wrapping the common commands (`make up`, `make test`,
-`make seed`, `make scale-workers`, `make logs`, `make down`).
+`make lint`, `make typecheck`, `make seed`, `make scale-workers`, `make logs`,
+`make down`).
 
 On macOS, if `docker` is not on your `PATH` but Docker Desktop is installed:
 
