@@ -17,6 +17,7 @@ media/
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # Environment
 .env

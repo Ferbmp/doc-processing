@@ -8,6 +8,10 @@ immutable account of how it got there.
 The extraction service is simulated. Everything around it (state machine, job
 queue, retries, idempotency, transactions, audit trail) is real.
 
+Backend: Django 5 + DRF + Postgres 16. Frontend: Vite + React + TypeScript,
+styled with Tailwind CSS v4 and shadcn/ui components (owned in-tree under
+`frontend/src/components/ui`).
+
 ---
 
 ## Running it
@@ -83,7 +87,7 @@ To watch concurrency behave, run several workers: `make scale-workers`.
 
 ```mermaid
 flowchart LR
-    UI["React UI (Vite)"] -->|"POST /api/documents/"| API["Django + DRF"]
+    UI["React UI (Vite + Tailwind + shadcn/ui)"] -->|"POST /api/documents/"| API["Django + DRF"]
     API -->|"document + job in one transaction"| DB[("Postgres")]
     Worker["Worker (management command)"] -->|"claim FOR UPDATE SKIP LOCKED"| DB
     Worker -->|"simulated call, outside any transaction"| AI["AI extraction simulator"]
