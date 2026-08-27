@@ -137,9 +137,9 @@ These are the deliberate boundaries of the design — not oversights:
 flowchart TB
     UI["React UI"]
 
-    subgraph backend [" "]
+    subgraph django ["Django"]
         direction LR
-        API["Django + DRF"]
+        API["API (DRF)"]
         Worker["Worker"]
     end
 
@@ -148,6 +148,7 @@ flowchart TB
 
     UI -->|"submit / poll"| API
     API -->|"document + job\n(one transaction)"| DB
+    API -->|"read documents,\njobs, audit events"| DB
     Worker -->|"claim\nFOR UPDATE SKIP LOCKED"| DB
     Worker -->|"extract\n(outside any TX)"| AI
     Worker -->|"result + status + audit\n(one transaction)"| DB
@@ -167,6 +168,7 @@ stateDiagram-v2
     PROCESSING --> REVIEW_REQUIRED: needs human
     PROCESSING --> RETRY_SCHEDULED: transient fail
     RETRY_SCHEDULED --> PROCESSING: backoff done
+    RETRY_SCHEDULED --> FAILED: budget exhausted
     PROCESSING --> FAILED: give up
     REVIEW_REQUIRED --> COMPLETED: approve
     REVIEW_REQUIRED --> REJECTED: reject
@@ -175,6 +177,10 @@ stateDiagram-v2
 
 `COMPLETED` and `REJECTED` are terminal. `REVIEW_REQUIRED` covers incomplete
 fields, low confidence, arithmetic mismatch, and suspected duplicate invoices.
+`RETRY_SCHEDULED → FAILED` is allowed but unreachable today — giving up always
+happens from `PROCESSING` — and is kept so a future reaper that abandons a
+scheduled retry fails cleanly instead of raising `InvalidTransition`.
+
 The map lives in [backend/documents/states.py](backend/documents/states.py) and
 every status change goes through `transition()` in
 [backend/documents/services/state.py](backend/documents/services/state.py),
